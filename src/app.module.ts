@@ -4,6 +4,8 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { QueueModule } from './queue/queue.module';
+import { RedisModule } from './redis/redis.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -12,6 +14,8 @@ import { QueueModule } from './queue/queue.module';
     }),
     PrismaModule,
     QueueModule,
+    RedisModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [AppService],

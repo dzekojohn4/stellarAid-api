@@ -270,7 +270,7 @@ model Newsletter {
 /// AuditLog model for tracking system actions
 model AuditLog {
   id             String            @id @default(uuid())
-  userId         String
+  userId         String?
   action         AuditActionType
   resourceType   String
   resourceId     String
@@ -280,7 +280,7 @@ model AuditLog {
   createdAt      DateTime          @default(now())
 
   // Relations
-  user           User              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user           User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([action])

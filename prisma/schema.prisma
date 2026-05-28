@@ -11,9 +11,7 @@ datasource db {
 }
 
 // ---------------------------------------------------------------------------
-// Placeholder models - to be expanded as feature modules are implemented.
-// Roles reflect the StellarAid domain (donors, creators, admins) and are kept
-// intentionally minimal here so initial migrations succeed.
+// ENUMS: Define domain-specific enumerations
 // ---------------------------------------------------------------------------
 
 enum UserRole {
@@ -22,67 +20,271 @@ enum UserRole {
   ADMIN
 }
 
-enum ProjectStatus {
+enum CampaignStatus {
   DRAFT
   PENDING_APPROVAL
   ACTIVE
   COMPLETED
+  CANCELLED
   REJECTED
 }
 
 enum DonationStatus {
   PENDING
   CONFIRMED
+  REFUNDED
   FAILED
 }
 
+enum MilestoneStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  FAILED
+}
+
+enum NotificationType {
+  CAMPAIGN_CREATED
+  CAMPAIGN_UPDATED
+  DONATION_RECEIVED
+  MILESTONE_REACHED
+  CAMPAIGN_COMPLETED
+  DISPUTE_FILED
+  DISPUTE_RESOLVED
+}
+
+enum DisputeStatus {
+  OPENED
+  UNDER_REVIEW
+  RESOLVED
+  REJECTED
+}
+
+enum AuditActionType {
+  USER_CREATED
+  CAMPAIGN_CREATED
+  CAMPAIGN_UPDATED
+  DONATION_MADE
+  MILESTONE_COMPLETED
+  DISPUTE_FILED
+  ADMIN_ACTION
+}
+
+// ---------------------------------------------------------------------------
+// MODELS: Define all database models with relationships and constraints
+// ---------------------------------------------------------------------------
+
+/// User model representing donors, creators, and administrators
 model User {
-  id            String     @id @default(uuid())
-  email         String     @unique
+  id            String   @id @default(uuid())
+  email         String   @unique
   name          String?
-  role          UserRole   @default(DONOR)
-  walletAddress String?    @unique
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  role          UserRole @default(DONOR)
+  walletAddress String?  @unique
+  bio           String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  projects      Project[]  @relation("ProjectCreator")
+  // Relations
+  campaigns     Campaign[]     @relation("CampaignCreator")
   donations     Donation[]
+  updates       Update[]       @relation("UpdateCreator")
+  notifications Notification[]
+  disputes      Dispute[]      @relation("DisputeFiler")
+  newsLetterSub Newsletter?
+  auditLogs     AuditLog[]
 
+  @@index([email])
+  @@index([role])
+  @@index([isActive])
   @@map("users")
 }
 
-model Project {
+/// Campaign model representing fundraising campaigns
+model Campaign {
+  id           String         @id @default(uuid())
+  title        String
+  description  String
+  goalAmount   Decimal        @db.Decimal(20, 7)
+  raisedAmount Decimal        @default(0) @db.Decimal(20, 7)
+  status       CampaignStatus @default(DRAFT)
+  creatorId    String
+  startDate    DateTime?
+  endDate      DateTime?
+  imageUrl     String?
+  category     String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  // Relations
+  creator    User        @relation("CampaignCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  donations  Donation[]
+  milestones Milestone[]
+  updates    Update[]
+  disputes   Dispute[]
+
+  @@index([creatorId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([category])
+  @@map("campaigns")
+}
+
+/// Donation model representing individual donations to campaigns
+model Donation {
   id          String         @id @default(uuid())
-  title       String
-  description String
-  goalAmount  Decimal        @db.Decimal(20, 7)
-  status      ProjectStatus  @default(DRAFT)
-  creatorId   String
+  amount      Decimal        @db.Decimal(20, 7)
+  assetCode   String         @default("XLM")
+  txHash      String?        @unique
+  status      DonationStatus @default(PENDING)
+  donorId     String
+  campaignId  String
+  donatedAt   DateTime       @default(now())
+  confirmedAt DateTime?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
-  creator     User           @relation("ProjectCreator", fields: [creatorId], references: [id])
-  donations   Donation[]
+  // Relations
+  donor    User      @relation(fields: [donorId], references: [id], onDelete: Cascade)
+  campaign Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  disputes Dispute[]
 
-  @@index([creatorId])
-  @@map("projects")
+  @@unique([donorId, campaignId, txHash])
+  @@index([donorId])
+  @@index([campaignId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("donations")
 }
 
-model Donation {
-  id          String          @id @default(uuid())
-  amount      Decimal         @db.Decimal(20, 7)
-  assetCode   String          @default("XLM")
-  txHash      String?         @unique
-  status      DonationStatus  @default(PENDING)
-  donorId     String
-  projectId   String
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+/// Milestone model representing campaign milestones
+model Milestone {
+  id           String          @id @default(uuid())
+  campaignId   String
+  title        String
+  description  String?
+  targetAmount Decimal         @db.Decimal(20, 7)
+  status       MilestoneStatus @default(PENDING)
+  dueDate      DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
 
-  donor       User            @relation(fields: [donorId], references: [id])
-  project     Project         @relation(fields: [projectId], references: [id])
+  // Relations
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
-  @@index([donorId])
-  @@index([projectId])
-  @@map("donations")
+  @@index([campaignId])
+  @@index([status])
+  @@map("milestones")
+}
+
+/// Update model representing campaign progress updates
+model Update {
+  id         String   @id @default(uuid())
+  campaignId String
+  creatorId  String
+  title      String
+  content    String
+  imageUrl   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  creator  User     @relation("UpdateCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([creatorId])
+  @@index([createdAt])
+  @@map("updates")
+}
+
+/// Notification model for user notifications
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  relatedId String? // ID of related resource (campaign, donation, etc.)
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+/// Dispute model for handling donation disputes
+model Dispute {
+  id          String        @id @default(uuid())
+  donationId  String
+  filerId     String
+  campaignId  String
+  reason      String
+  description String
+  status      DisputeStatus @default(OPENED)
+  resolution  String?
+  resolvedAt  DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  donation Donation @relation(fields: [donationId], references: [id], onDelete: Cascade)
+  filer    User     @relation("DisputeFiler", fields: [filerId], references: [id], onDelete: Cascade)
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([donationId])
+  @@index([filerId])
+  @@index([campaignId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("disputes")
+}
+
+/// Newsletter model for newsletter subscriptions
+model Newsletter {
+  id             String    @id @default(uuid())
+  userId         String    @unique
+  email          String    @unique
+  isSubscribed   Boolean   @default(true)
+  subscribedAt   DateTime  @default(now())
+  unsubscribedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@index([isSubscribed])
+  @@map("newsletters")
+}
+
+/// AuditLog model for tracking system actions
+model AuditLog {
+  id           String          @id @default(uuid())
+  userId       String?
+  action       AuditActionType
+  resourceType String
+  resourceId   String
+  details      String? // JSON stringified details
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime        @default(now())
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([resourceType])
+  @@index([createdAt])
+  @@map("audit_logs")
 }

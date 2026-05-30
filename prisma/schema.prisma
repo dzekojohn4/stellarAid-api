@@ -78,6 +78,12 @@ enum AuditActionType {
   ADMIN_ACTION
 }
 
+enum KYCStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
 // ---------------------------------------------------------------------------
 // MODELS: Define all database models with relationships and constraints
 // ---------------------------------------------------------------------------
@@ -111,6 +117,7 @@ model User {
   @@index([email])
   @@index([role])
   @@index([isActive])
+  @@index([kycStatus])
   @@map("users")
 }
 

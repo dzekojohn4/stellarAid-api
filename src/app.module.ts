@@ -23,6 +23,7 @@ import { CampaignsModule } from './campaigns/campaigns.module';
     AuthModule,
     AppThrottlerModule,
     ApiKeysModule,
+    // Campaigns module
     CampaignsModule,
   ],
   controllers: [AppController],

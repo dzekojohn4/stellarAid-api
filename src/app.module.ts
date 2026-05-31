@@ -22,6 +22,8 @@ import { ApiKeysModule } from './api-keys/api-keys.module';
     AuthModule,
     AppThrottlerModule,
     ApiKeysModule,
+    // Campaigns module
+    require('./campaigns/campaigns.module').CampaignsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

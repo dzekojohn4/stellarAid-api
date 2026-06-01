@@ -27,9 +27,11 @@ const FORBIDDEN_FIELDS = [
 
 @Controller('campaigns')
 export class CampaignsController {
-  constructor(private readonly campaignsService: CampaignsService) {}
+  constructor(
+    private readonly campaignsService: CampaignsService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
+  ) {}
 
-  @UseGuards(JwtAuthGuard)
   @Post()
   async create(
     @Body() body: CreateCampaignDto,

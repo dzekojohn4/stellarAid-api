@@ -4,15 +4,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Campaign } from './entities/campaign.entity';
-import { Donation } from '../donations/entities/donation.entity';
-import { CampaignStats, DonationsPerDay, TopDonor } from './interfaces/campaign-stats.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
 import { BrowseCampaignsQueryDto, BrowseCampaignsResponseDto } from './dto/browse-campaigns.dto';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
@@ -56,69 +49,11 @@ export class CampaignsService {
       where: { id: campaignId },
     });
 
-  constructor(
-    @InjectRepository(Campaign)
-    private readonly campaignRepo: Repository<Campaign>,
-    @InjectRepository(Donation)
-    private readonly donationRepo: Repository<Donation>,
-  ) {}
-
-  async getCampaignStats(campaignId: string): Promise<CampaignStats> {
-    const campaign = await this.campaignRepo.findOne({ where: { id: campaignId } });
     if (!campaign) {
-      throw new NotFoundException(`Campaign ${campaignId} not found`);
+      throw new NotFoundException('Campaign not found');
     }
 
     return this.prisma.campaign.update({
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    // Aggregate totals
-    const totals = await this.donationRepo
-      .createQueryBuilder('d')
-      .select('SUM(d.amount)', 'totalRaised')
-      .addSelect('COUNT(DISTINCT d.donorId)', 'donorCount')
-      .addSelect('AVG(d.amount)', 'avgDonation')
-      .where('d.campaignId = :campaignId', { campaignId })
-      .getRawOne<{ totalRaised: string; donorCount: string; avgDonation: string }>();
-
-    // Unique assets
-    const assetRows = await this.donationRepo
-      .createQueryBuilder('d')
-      .select('DISTINCT d.assetCode', 'assetCode')
-      .where('d.campaignId = :campaignId', { campaignId })
-      .getRawMany<{ assetCode: string }>();
-
-    // Donations per day (last 30 days)
-    const perDayRows = await this.donationRepo
-      .createQueryBuilder('d')
-      .select("TO_CHAR(d.createdAt, 'YYYY-MM-DD')", 'date')
-      .addSelect('COUNT(*)', 'count')
-      .addSelect('SUM(d.amount)', 'total')
-      .where('d.campaignId = :campaignId', { campaignId })
-      .andWhere('d.createdAt >= :thirtyDaysAgo', { thirtyDaysAgo })
-      .groupBy("TO_CHAR(d.createdAt, 'YYYY-MM-DD')")
-      .orderBy("TO_CHAR(d.createdAt, 'YYYY-MM-DD')", 'ASC')
-      .getRawMany<{ date: string; count: string; total: string }>();
-
-    // Top donors (top 10 by total donated)
-    const topDonorRows = await this.donationRepo
-      .createQueryBuilder('d')
-      .select('d.donorId', 'donorId')
-      .addSelect('SUM(d.amount)', 'totalDonated')
-      .addSelect('COUNT(*)', 'donationCount')
-      .where('d.campaignId = :campaignId', { campaignId })
-      .groupBy('d.donorId')
-      .orderBy('SUM(d.amount)', 'DESC')
-      .limit(10)
-      .getRawMany<{ donorId: string; totalDonated: string; donationCount: string }>();
-
-    const donationsPerDay: DonationsPerDay[] = perDayRows.map((r) => ({
-      date: r.date,
-      count: parseInt(r.count, 10),
-      total: parseFloat(r.total),
-    }));
-    const updated = await this.prisma.campaign.update({
       where: { id: campaignId },
       data: {
         title: dto.title ?? campaign.title,
@@ -127,9 +62,6 @@ export class CampaignsService {
         imageUrl: dto.coverImageUrl ?? campaign.imageUrl,
       },
     });
-  }
-
-    return updated;
   }
 
   /**
@@ -255,6 +187,171 @@ export class CampaignsService {
     });
   }
 
+  /**
+   * Get campaign statistics (GET /campaigns/:id/stats)
+   */
+  async getCampaignStats(campaignId: string) {
+    const campaign = await this.prisma.campaign.findUnique({
+      where: { id: campaignId },
+    });
+
+    if (!campaign) {
+      throw new NotFoundException('Campaign not found');
+    }
+
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const totals = await this.prisma.donation.aggregate({
+      where: { campaignId, status: 'CONFIRMED' },
+      _sum: { amount: true },
+      _count: { donorId: true },
+      _avg: { amount: true },
+    });
+
+    const uniqueAssets = await this.prisma.donation.findMany({
+      where: { campaignId, status: 'CONFIRMED' },
+      select: { assetCode: true },
+      distinct: ['assetCode'],
+    });
+
+    const donationsPerDay = await this.prisma.$queryRaw<
+      { date: string; count: bigint; total: number }[]
+    >`
+      SELECT
+        TO_CHAR(d."createdAt", 'YYYY-MM-DD') AS date,
+        COUNT(*)::int AS count,
+        SUM(d.amount)::decimal AS total
+      FROM donations d
+      WHERE d."campaignId" = ${campaignId}::uuid
+        AND d."createdAt" >= ${thirtyDaysAgo}
+      GROUP BY TO_CHAR(d."createdAt", 'YYYY-MM-DD')
+      ORDER BY date ASC
+    `;
+
+    const topDonors = await this.prisma.donation.groupBy({
+      by: ['donorId'],
+      where: { campaignId, status: 'CONFIRMED' },
+      _sum: { amount: true },
+      _count: true,
+      orderBy: { _sum: { amount: 'desc' } },
+      take: 10,
+    });
+
+    return {
+      campaignId,
+      totalRaised: Number(totals._sum.amount ?? 0),
+      donorCount: totals._count.donorId,
+      uniqueAssets: uniqueAssets.map((r) => r.assetCode),
+      avgDonation: Number(totals._avg.amount ?? 0),
+      donationsPerDay: donationsPerDay.map((r) => ({
+        date: r.date,
+        count: Number(r.count),
+        total: Number(r.total),
+      })),
+      topDonors: topDonors.map((r) => ({
+        donorId: r.donorId,
+        totalDonated: Number(r._sum.amount ?? 0),
+        donationCount: r._count,
+      })),
+    };
+  }
+
+  /**
+   * Create a campaign update (POST /campaigns/:id/updates)
+   * Only the campaign creator can post updates.
+   * Triggers a notification to all campaign donors.
+   */
+  async createUpdate(
+    campaignId: string,
+    creatorId: string,
+    dto: { title: string; content: string; imageUrls?: string[] },
+  ) {
+    const campaign = await this.prisma.campaign.findUnique({
+      where: { id: campaignId },
+    });
+
+    if (!campaign) {
+      throw new NotFoundException('Campaign not found');
+    }
+
+    if (campaign.creatorId !== creatorId) {
+      throw new ForbiddenException('Only the campaign creator can post updates');
+    }
+
+    const update = await this.prisma.update.create({
+      data: {
+        campaignId,
+        creatorId,
+        title: dto.title,
+        content: dto.content,
+        imageUrls: dto.imageUrls?.length ? dto.imageUrls : undefined,
+      },
+    });
+
+    // Trigger notifications to all campaign donors
+    await this.notifyCampaignDonors(campaignId, update.title);
+
+    return update;
+  }
+
+  /**
+   * Soft-delete a campaign update (DELETE /campaigns/:id/updates/:updateId)
+   * Creator or admin can delete. Sets deletedAt and returns 204.
+   */
+  async deleteUpdate(
+    campaignId: string,
+    updateId: string,
+    userId: string,
+    isAdmin: boolean,
+  ): Promise<void> {
+    const update = await this.prisma.update.findUnique({
+      where: { id: updateId },
+    });
+
+    if (!update || update.campaignId !== campaignId) {
+      throw new NotFoundException('Update not found for this campaign');
+    }
+
+    if (update.deletedAt) {
+      throw new NotFoundException('Update not found');
+    }
+
+    if (!isAdmin && update.creatorId !== userId) {
+      throw new ForbiddenException('Only the creator or an admin can delete updates');
+    }
+
+    await this.prisma.update.update({
+      where: { id: updateId },
+      data: { deletedAt: new Date() },
+    });
+  }
+
+  /**
+   * Create notifications for all distinct donors of a campaign.
+   */
+  private async notifyCampaignDonors(campaignId: string, updateTitle: string): Promise<void> {
+    const donors = await this.prisma.donation.findMany({
+      where: { campaignId, status: 'CONFIRMED' },
+      select: { donorId: true },
+      distinct: ['donorId'],
+    });
+
+    if (donors.length === 0) return;
+
+    const notificationData = donors.map((d) => ({
+      userId: d.donorId,
+      type: 'CAMPAIGN_UPDATED' as const,
+      title: 'Campaign Update',
+      message: `A new update "${updateTitle}" has been posted for a campaign you donated to.`,
+      relatedId: campaignId,
+    }));
+
+    await this.prisma.notification.createMany({
+      data: notificationData,
+    });
+  }
+
   private async browseCampaignsWithFullTextSearch(input: {
     page: number;
     limit: number;
@@ -268,16 +365,14 @@ export class CampaignsService {
     const filters = sqlCampaignFilters({ category, status });
 
     const [countRow, rankedRows] = await this.prisma.$transaction([
-      this.prisma.$queryRaw<{ count: number }[]>`
-        SELECT COUNT(*)::int AS count
+      this.prisma.$queryRaw<{ count: number }[]>`        SELECT COUNT(*)::int AS count
         FROM campaigns c
         WHERE ${filters.whereSql}
           AND to_tsvector('english',
             coalesce(c.title, '') || ' ' || coalesce(c.description, '') || ' ' || coalesce(c.story, '')
           ) @@ plainto_tsquery('english', ${search})
       `,
-      this.prisma.$queryRaw<{ id: string; rank: number }[]>`
-        SELECT c.id,
+      this.prisma.$queryRaw<{ id: string; rank: number }[]>`        SELECT c.id,
           ts_rank(
             to_tsvector('english',
               coalesce(c.title, '') || ' ' || coalesce(c.description, '') || ' ' || coalesce(c.story, '')
@@ -309,21 +404,6 @@ export class CampaignsService {
     const ordered = ids.map((id) => byId.get(id)).filter(Boolean) as any[];
 
     return { data: ordered, total, page, limit };
-    const topDonors: TopDonor[] = topDonorRows.map((r) => ({
-      donorId: r.donorId,
-      totalDonated: parseFloat(r.totalDonated),
-      donationCount: parseInt(r.donationCount, 10),
-    }));
-
-    return {
-      campaignId,
-      totalRaised: parseFloat(totals?.totalRaised ?? '0'),
-      donorCount: parseInt(totals?.donorCount ?? '0', 10),
-      uniqueAssets: assetRows.map((r) => r.assetCode),
-      avgDonation: parseFloat(totals?.avgDonation ?? '0'),
-      donationsPerDay,
-      topDonors,
-    };
   }
 }
 

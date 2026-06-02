@@ -1,7 +1,9 @@
 import {
   BadRequestException,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -9,7 +11,6 @@ import {
   Query,
   Body,
   Req,
-  BadRequestException,
   Inject,
   UseGuards,
 } from '@nestjs/common';
@@ -21,13 +22,13 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
-import { Body } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminGuard } from '../users/guards/admin.guard';
 import { BrowseCampaignsQueryDto, BrowseCampaignsResponseDto } from './dto/browse-campaigns.dto';
 import { DonationsService } from '../donations/donations.service';
 import { GetCampaignDonationsQueryDto, GetCampaignDonationsResponseDto } from '../donations/dto/get-campaign-donations.dto';
+import { CreateUpdateDto } from './dto/create-update.dto';
 
 const FORBIDDEN_FIELDS = [
   'goalAmount',
@@ -42,6 +43,11 @@ const CACHE_MANAGER = 'CACHE_MANAGER';
 @Controller('campaigns')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 export class CampaignsController {
+  constructor(
+    private readonly campaignsService: CampaignsService,
+    private readonly donationsService: DonationsService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
+  ) {}
 
   @Get(':id/stats')
   @Roles('creator', 'admin')
@@ -49,11 +55,7 @@ export class CampaignsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<CampaignStats> {
     return this.campaignsService.getCampaignStats(id);
-  constructor(
-    private readonly campaignsService: CampaignsService,
-    private readonly donationsService: DonationsService,
-    @Inject(CACHE_MANAGER) private cacheManager: Cache,
-  ) {}
+  }
 
   @Post()
   @UseGuards(JwtAuthGuard)
@@ -118,6 +120,38 @@ export class CampaignsController {
       query.sortBy,
       query.order,
     );
+  }
+
+  /**
+   * POST /campaigns/:id/updates
+   * Create a campaign update. Creator-only.
+   */
+  @Post(':id/updates')
+  @UseGuards(JwtAuthGuard)
+  async createUpdate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: CreateUpdateDto,
+    @Req() req: Request & { user: any },
+  ) {
+    const userId = req.user?.sub as string;
+    return this.campaignsService.createUpdate(id, userId, body);
+  }
+
+  /**
+   * DELETE /campaigns/:id/updates/:updateId
+   * Soft-delete a campaign update. Creator or admin.
+   */
+  @Delete(':id/updates/:updateId')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(204)
+  async deleteUpdate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('updateId', ParseUUIDPipe) updateId: string,
+    @Req() req: Request & { user: any },
+  ): Promise<void> {
+    const userId = req.user?.sub as string;
+    const isAdmin = req.user?.role === 'ADMIN';
+    await this.campaignsService.deleteUpdate(id, updateId, userId, isAdmin);
   }
 
   private generateCacheKey(query: BrowseCampaignsQueryDto): string {

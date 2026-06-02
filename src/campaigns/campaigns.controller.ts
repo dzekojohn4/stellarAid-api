@@ -20,6 +20,10 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { BrowseCampaignsQueryDto, BrowseCampaignsResponseDto } from './dto/browse-campaigns.dto';
+import { MilestoneResponseDto } from './dto/milestone-response.dto';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
+import { Request } from 'express';
 
 const FORBIDDEN_FIELDS = [
   'goalAmount',
@@ -31,6 +35,10 @@ const FORBIDDEN_FIELDS = [
 @Controller('campaigns')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 export class CampaignsController {
+  constructor(
+    private readonly campaignsService: CampaignsService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) {}
 
   @Get(':id/stats')
   @Roles('creator', 'admin')
@@ -38,10 +46,14 @@ export class CampaignsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<CampaignStats> {
     return this.campaignsService.getCampaignStats(id);
-  constructor(
-    private readonly campaignsService: CampaignsService,
-    @Inject(CACHE_MANAGER) private cacheManager: Cache,
-  ) {}
+  }
+
+  @Get(':id/milestones')
+  async getCampaignMilestones(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<MilestoneResponseDto[]> {
+    return this.campaignsService.getCampaignMilestones(id);
+  }
 
   @Post()
   async create(
@@ -89,12 +101,7 @@ export class CampaignsController {
   }
 
   private generateCacheKey(query: BrowseCampaignsQueryDto): string {
-    const parts = [
-      'campaigns',
-      `page:${query.page}`,
-      `limit:${query.limit}`,
-      `sortBy:${query.sortBy}`,
-    ];
+    const parts = ['campaigns'];
 
     if (query.category) parts.push(`category:${query.category}`);
     if (query.status) parts.push(`status:${query.status}`);

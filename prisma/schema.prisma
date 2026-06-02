@@ -51,10 +51,10 @@ enum TipStatus {
 }
 
 enum MilestoneStatus {
-  PENDING
-  ACTIVE
-  COMPLETED
-  FAILED
+  LOCKED
+  UNLOCKED
+  RELEASE_REQUESTED
+  RELEASED
 }
 
 enum NotificationType {
@@ -187,7 +187,7 @@ model Donation {
   campaignId  String
   tipAmount   Decimal?       @db.Decimal(20, 7)
   tipAsset    String?        @default("XLM")
-  tipId       String?
+  tipId       String?        @unique
   donatedAt   DateTime       @default(now())
   confirmedAt DateTime?
   createdAt   DateTime       @default(now())
@@ -197,7 +197,8 @@ model Donation {
   donor    User         @relation(fields: [donorId], references: [id], onDelete: Cascade)
   campaign Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   disputes Dispute[]
-  tip      PlatformTip? @relation(fields: [tipId], references: [id])
+  tip      PlatformTip? @relation("DonationTip", fields: [tipId], references: [id])
+  platformTip PlatformTip? @relation("PlatformTipDonation")
 
   @@unique([donorId, campaignId, txHash])
   @@index([donorId])
@@ -222,7 +223,8 @@ model PlatformTip {
 
   // Relations
   donor    User      @relation(fields: [donorId], references: [id], onDelete: Cascade)
-  donation Donation? @relation(fields: [donationId], references: [id], onDelete: SetNull)
+  donationTip Donation? @relation("DonationTip")
+  donation    Donation? @relation("PlatformTipDonation", fields: [donationId], references: [id], onDelete: SetNull)
 
   @@index([donorId])
   @@index([status])
@@ -238,18 +240,33 @@ model Milestone {
   title        String
   description  String?
   targetAmount Decimal         @db.Decimal(20, 7)
-  status       MilestoneStatus @default(PENDING)
+  status       MilestoneStatus @default(LOCKED)
   dueDate      DateTime?
   completedAt  DateTime?
+  txHash       String?
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
   // Relations
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign      Campaign                  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  statusHistory MilestoneStatusHistory[]
 
   @@index([campaignId])
   @@index([status])
   @@map("milestones")
+}
+
+model MilestoneStatusHistory {
+  id          String          @id @default(uuid())
+  milestoneId String
+  fromStatus  MilestoneStatus?
+  toStatus    MilestoneStatus
+  changedAt   DateTime        @default(now())
+
+  milestone Milestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+
+  @@index([milestoneId])
+  @@map("milestone_status_history")
 }
 
 /// Update model representing campaign progress updates

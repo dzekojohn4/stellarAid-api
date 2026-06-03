@@ -1,43 +1,54 @@
 import {
+  BadRequestException,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Param,
-  UseGuards,
   ParseUUIDPipe,
   Patch,
   Post,
   Query,
   Body,
   Req,
-  BadRequestException,
   Inject,
+  UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import { CampaignsService } from './campaigns.service';
 import { CampaignStats } from './interfaces/campaign-stats.interface';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
-import { BrowseCampaignsQueryDto, BrowseCampaignsResponseDto } from './dto/browse-campaigns.dto';
-import { MilestoneResponseDto } from './dto/milestone-response.dto';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Cache } from 'cache-manager';
 import { Request } from 'express';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AdminGuard } from '../users/guards/admin.guard';
+import { BrowseCampaignsQueryDto, BrowseCampaignsResponseDto } from './dto/browse-campaigns.dto';
+import { DonationsService } from '../donations/donations.service';
+import { ContractBalanceResponseDto } from './dto/contract-balance.dto';
+import { GetCampaignDonationsQueryDto, GetCampaignDonationsResponseDto } from '../donations/dto/get-campaign-donations.dto';
+import { CreateUpdateDto } from './dto/create-update.dto';
 
 const FORBIDDEN_FIELDS = [
   'goalAmount',
   'contractId',
+  'acceptedAssets',
   'milestones',
   'endDate',
 ];
+
+const CACHE_MANAGER = 'CACHE_MANAGER';
 
 @Controller('campaigns')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 export class CampaignsController {
   constructor(
     private readonly campaignsService: CampaignsService,
-    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+    private readonly donationsService: DonationsService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
 
   @Get(':id/stats')
@@ -48,14 +59,8 @@ export class CampaignsController {
     return this.campaignsService.getCampaignStats(id);
   }
 
-  @Get(':id/milestones')
-  async getCampaignMilestones(
-    @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<MilestoneResponseDto[]> {
-    return this.campaignsService.getCampaignMilestones(id);
-  }
-
   @Post()
+  @UseGuards(JwtAuthGuard)
   async create(
     @Body() body: CreateCampaignDto,
     @Req() req: Request & { user: any },
@@ -65,6 +70,7 @@ export class CampaignsController {
   }
 
   @Patch(':id')
+  @UseGuards(JwtAuthGuard)
   async update(
     @Param('id') id: string,
     @Body() body: UpdateCampaignDto,
@@ -100,6 +106,77 @@ export class CampaignsController {
     return result;
   }
 
+  /**
+   * GET /campaigns/:id/contract-balance
+   * Fetch on-chain balances for the campaign's Stellar contract account.
+   * Discrepancies between on-chain and stored amounts are flagged and auto-corrected.
+   */
+  @Get(':id/contract-balance')
+  async getContractBalance(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ContractBalanceResponseDto> {
+    return this.campaignsService.getContractBalance(id);
+  }
+
+  /**
+   * GET /campaigns/:campaignId/donations
+   * Get paginated donations for a campaign (public leaderboard)
+   */
+  @Get(':campaignId/donations')
+  async getCampaignDonations(
+    @Param('campaignId') campaignId: string,
+    @Query() query: GetCampaignDonationsQueryDto,
+  ): Promise<GetCampaignDonationsResponseDto> {
+    return this.donationsService.getCampaignDonations(
+      campaignId,
+      query.page,
+      query.limit,
+      query.sortBy,
+      query.order,
+    );
+  }
+
+  /**
+   * POST /campaigns/:id/updates
+   * Create a campaign update. Creator-only.
+   */
+  @Post(':id/updates')
+  @UseGuards(JwtAuthGuard)
+  async createUpdate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: CreateUpdateDto,
+    @Req() req: Request & { user: any },
+  ) {
+    const userId = req.user?.sub as string;
+    return this.campaignsService.createUpdate(id, userId, body);
+  }
+
+  /**
+   * DELETE /campaigns/:id/updates/:updateId
+   * Soft-delete a campaign update. Creator or admin.
+   */
+  @Delete(':id/updates/:updateId')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(204)
+  async deleteUpdate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('updateId', ParseUUIDPipe) updateId: string,
+    @Req() req: Request & { user: any },
+  ): Promise<void> {
+    const userId = req.user?.sub as string;
+    const isAdmin = req.user?.role === 'ADMIN';
+    await this.campaignsService.deleteUpdate(id, updateId, userId, isAdmin);
+   * GET /campaigns/:id/updates
+   * Public endpoint – returns paginated campaign updates sorted by createdAt DESC
+   */
+  @Get(':id/updates')
+  async getCampaignUpdates(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('page') page = 1,
+  ) {
+    return this.campaignsService.getCampaignUpdates(id, Number(page));
+  }
+
   private generateCacheKey(query: BrowseCampaignsQueryDto): string {
     const parts = ['campaigns'];
 
@@ -108,5 +185,16 @@ export class CampaignsController {
     if (query.search) parts.push(`search:${query.search}`);
 
     return parts.join(':');
+  }
+}
+
+@Controller('admin/campaigns')
+export class AdminCampaignsController {
+  constructor(private readonly campaignsService: CampaignsService) {}
+
+  @Post(':id/feature')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  async feature(@Param('id') id: string) {
+    return this.campaignsService.featureCampaign(id);
   }
 }

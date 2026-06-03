@@ -1,71 +1,66 @@
-import { Injectable, BadRequestException, InternalServerErrorException } from '@nestjs/common';
-import { Cache } from 'cache-manager';
-import { Inject, CACHE_MANAGER } from '@nestjs/common';
-import { Server, StrKey } from '@stellar/stellar-sdk';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { CreateContractDto } from './dto/create-contract.dto';
 
 @Injectable()
 export class ContractsService {
-  constructor(@Inject(CACHE_MANAGER) private readonly cacheManager: Cache) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async getContractTransactions(contractId: string, limit = 20, cursor?: string) {
-    if (!StrKey.isValidEd25519PublicKey(contractId)) {
-      throw new BadRequestException('Invalid Stellar contract ID');
+  async createContract(dto: CreateContractDto) {
+    // Verify campaign exists
+    const campaign = await this.prisma.campaign.findUnique({
+      where: { id: dto.campaignId },
+    });
+    if (!campaign) {
+      throw new NotFoundException(`Campaign with ID ${dto.campaignId} not found`);
     }
 
-    const cacheKey = `contract-transactions:${contractId}:${limit}:${cursor ?? 'start'}`;
-    const cached = await this.cacheManager.get(cacheKey);
-    if (cached) {
-      return cached;
+    // Check if contract already exists for this campaign
+    const existingCampaignContract = await this.prisma.smartContract.findUnique({
+      where: { campaignId: dto.campaignId },
+    });
+    if (existingCampaignContract) {
+      throw new BadRequestException(`Campaign already has a contract linked to it (Contract: ${existingCampaignContract.contractId})`);
     }
 
-    const horizonUrl = process.env.STELLAR_HORIZON_URL || 'https://horizon.stellar.org';
-    const server = new Server(horizonUrl);
-
-    const query = server
-      .operations()
-      .forAccount(contractId)
-      .limit(limit)
-      .order('desc');
-
-    if (cursor) {
-      query.cursor(cursor);
+    // Check if contract ID is already registered
+    const existingContractId = await this.prisma.smartContract.findUnique({
+      where: { contractId: dto.contractId },
+    });
+    if (existingContractId) {
+      throw new BadRequestException(`Contract ID ${dto.contractId} is already registered`);
     }
 
-    try {
-      const response = await query.call();
-      const records = response.records as Array<Record<string, any>>;
-
-      const data = records.map((record) => ({
-        type: record.type,
-        amount: record.amount ?? null,
-        asset: this.formatAsset(record),
-        from: record.from ?? null,
-        to: record.to ?? null,
-        timestamp: record.created_at,
-        txHash: record.transaction_hash,
-      }));
-
-      const nextCursor = records.length > 0 ? records[records.length - 1].paging_token : null;
-      const result = { data, nextCursor };
-
-      await this.cacheManager.set(cacheKey, result, 60);
-      return result;
-    } catch (error) {
-      throw new InternalServerErrorException(
-        `Failed to fetch transactions from Stellar Horizon: ${error?.message ?? 'unknown error'}`,
-      );
-    }
+    return this.prisma.smartContract.create({
+      data: {
+        contractId: dto.contractId,
+        campaignId: dto.campaignId,
+        network: dto.network,
+        deployedAt: dto.deployedAt ? new Date(dto.deployedAt) : new Date(),
+        deployerAddress: dto.deployerAddress,
+      },
+    });
   }
 
-  private formatAsset(record: Record<string, any>): string | null {
-    if (record.asset_type === 'native') {
-      return 'XLM';
+  async getContractDetails(contractId: string) {
+    const contract = await this.prisma.smartContract.findUnique({
+      where: { contractId },
+      include: {
+        campaign: {
+          select: {
+            title: true,
+            status: true,
+            goalAmount: true,
+            raisedAmount: true,
+          },
+        },
+      },
+    });
+
+    if (!contract) {
+      throw new NotFoundException(`Contract with ID ${contractId} not found`);
     }
 
-    if (record.asset_code && record.asset_issuer) {
-      return `${record.asset_code}:${record.asset_issuer}`;
-    }
-
-    return null;
+    return contract;
   }
 }

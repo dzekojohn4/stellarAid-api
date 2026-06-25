@@ -6,11 +6,12 @@ import { QueueModule } from '../queue/queue.module';
 import { StellarTransactionsService } from './stellar-transactions.service';
 import { HorizonService } from './horizon.service';
 import { StellarController } from './stellar.controller';
+import { PriceService } from './price.service';
 
 @Module({
   imports: [PrismaModule, QueueModule],
   controllers: [StellarController],
-  providers: [SorobanService, StellarEventService, StellarTransactionsService, HorizonService],
-  exports: [SorobanService, StellarEventService, StellarTransactionsService, HorizonService],
+  providers: [SorobanService, StellarEventService, StellarTransactionsService, HorizonService, PriceService],
+  exports: [SorobanService, StellarEventService, StellarTransactionsService, HorizonService, PriceService],
 })
 export class StellarModule {}

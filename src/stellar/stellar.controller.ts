@@ -1,23 +1,21 @@
-import { Controller, Get, Inject, Param } from '@nestjs/common';
+import { Controller, Get, Inject, NotFoundException, Param } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { HorizonService } from './horizon.service';
+import { PriceService } from './price.service';
 import { Horizon } from '@stellar/stellar-sdk';
 
-const WALLET_BALANCE_TTL = 10_000; // 10 s per acceptance criteria
+const WALLET_BALANCE_TTL = 10_000; // 10 s
 
 @Controller('stellar')
 export class StellarController {
   constructor(
     private readonly horizonService: HorizonService,
+    private readonly priceService: PriceService,
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
   ) {}
 
-  /**
-   * GET /stellar/balance/:walletAddress
-   * Returns all trustline balances for a Stellar wallet.
-   * Fetched from Horizon, cached per wallet for 10 seconds.
-   */
+  /** GET /stellar/balance/:walletAddress */
   @Get('balance/:walletAddress')
   async getWalletBalance(
     @Param('walletAddress') walletAddress: string,
@@ -31,9 +29,7 @@ export class StellarController {
     try {
       account = await server.loadAccount(walletAddress);
     } catch (err: any) {
-      if (err?.response?.status === 404 || err?.message?.includes('404')) {
-        return [];
-      }
+      if (err?.response?.status === 404 || err?.message?.includes('404')) return [];
       throw err;
     }
 
@@ -45,5 +41,13 @@ export class StellarController {
 
     await this.cache.set(cacheKey, result, WALLET_BALANCE_TTL);
     return result;
+  }
+
+  /** GET /stellar/prices */
+  @Get('prices')
+  async getPrices() {
+    const prices = await this.priceService.getPrices();
+    if (!prices) throw new NotFoundException('Price data unavailable');
+    return prices;
   }
 }

@@ -19,6 +19,7 @@ import { ContractsModule } from './contracts/contracts.module';
 import { UsersModule } from './users/users.module';
 import { MilestonesModule } from './milestones/milestones.module';
 import { NewsletterModule } from './newsletter/newsletter.module';
+import { UploadsModule } from './uploads/uploads.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { NewsletterModule } from './newsletter/newsletter.module';
     UsersModule,
     MilestonesModule,
     NewsletterModule,
+    UploadsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

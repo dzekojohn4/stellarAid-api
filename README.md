@@ -59,16 +59,15 @@ $ npm run test:cov
 
 ## Deployment
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+Production deploys must apply Prisma migrations before the API process starts.
+The production start command, `npm run start:prod`, runs `prisma migrate deploy`
+first via the `prestart:prod` lifecycle hook.
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+Refer to [docs/deployment.md](./docs/deployment.md) for the deploy order, rollback
+plan, and migration-history notes.
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+The same production database will track applied migration state in
+`_prisma_migrations`.
 
 ## Resources
 

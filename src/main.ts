@@ -4,9 +4,29 @@ import {
   DocumentBuilder,
   SwaggerModule,
 } from '@nestjs/swagger';
+import helmet from 'helmet';
+import { json, urlencoded } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Security headers — issue #323
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          scriptSrc: ["'self'"],
+          imgSrc: ["'self'", 'data:', 'https:'],
+        },
+      },
+    }),
+  );
+
+  // Body size limits — issue #325
+  app.use(json({ limit: process.env.JSON_BODY_LIMIT ?? '1mb' }));
+  app.use(urlencoded({ extended: true, limit: process.env.FILE_UPLOAD_LIMIT ?? '5mb' }));
 
   app.enableCors({
     origin: process.env.FRONTEND_URL || 'http://localhost:3000',

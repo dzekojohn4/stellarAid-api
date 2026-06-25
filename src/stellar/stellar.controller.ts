@@ -1,10 +1,9 @@
-import { Controller, Get, Inject, Param } from '@nestjs/common';
+import { Controller, Get, Inject, NotFoundException, Param } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { HorizonService } from './horizon.service';
 import { PriceService } from './price.service';
 import { Horizon } from '@stellar/stellar-sdk';
-import { NotFoundException } from '@nestjs/common';
 
 const WALLET_BALANCE_TTL = 10_000; // 10 s
 

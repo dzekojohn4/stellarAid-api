@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Query } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
 
 export type UserDocument = User & Document;
@@ -80,6 +80,9 @@ export class User {
 
   @Prop({ type: Date, default: null })
   refreshTokenExpires!: Date | null;
+
+  @Prop({ type: Date, default: null, index: true })
+  deletedAt!: Date | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
@@ -107,3 +110,17 @@ UserSchema.pre<UserDocument>('save', async function (next) {
 UserSchema.methods.comparePassword = function (candidate: string): Promise<boolean> {
   return bcrypt.compare(candidate, this.password);
 };
+
+// Automatically exclude soft-deleted documents from all query operations.
+function excludeDeleted(this: Query<unknown, UserDocument>, next: () => void): void {
+  const filter = this.getFilter();
+  if (!('deletedAt' in filter)) {
+    this.where({ deletedAt: null });
+  }
+  next();
+}
+
+UserSchema.pre('find', excludeDeleted);
+UserSchema.pre('findOne', excludeDeleted);
+UserSchema.pre('countDocuments', excludeDeleted);
+UserSchema.pre('findOneAndUpdate', excludeDeleted);

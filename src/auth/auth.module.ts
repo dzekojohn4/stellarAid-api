@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { UsersModule } from '../users/users.module';
 import { MailModule } from '../mail/mail.module';
+import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
   imports: [

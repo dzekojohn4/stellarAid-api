@@ -57,6 +57,12 @@ export class User {
   @Prop({ type: String, enum: Object.values(KycStatus), default: KycStatus.PENDING })
   kycStatus!: KycStatus;
 
+  @Prop({ type: Date, default: null })
+  kycSubmissionDate!: Date | null;
+
+  @Prop({ type: String, default: null })
+  kycReviewNotes!: string | null;
+
   @Prop({ type: String, default: null })
   walletAddress!: string | null;
 

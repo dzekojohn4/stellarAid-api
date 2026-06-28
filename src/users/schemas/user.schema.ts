@@ -10,6 +10,7 @@ export enum UserRole {
 }
 
 export enum KycStatus {
+  NOT_SUBMITTED = 'not_submitted',
   PENDING = 'pending',
   APPROVED = 'approved',
   REJECTED = 'rejected',
@@ -54,7 +55,7 @@ export class User {
   @Prop({ type: Boolean, default: false })
   isVerified!: boolean;
 
-  @Prop({ type: String, enum: Object.values(KycStatus), default: KycStatus.PENDING })
+  @Prop({ type: String, enum: Object.values(KycStatus), default: KycStatus.NOT_SUBMITTED })
   kycStatus!: KycStatus;
 
   @Prop({ type: Date, default: null })

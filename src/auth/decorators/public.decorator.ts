@@ -10,5 +10,4 @@ export const IS_PUBLIC_KEY = 'isPublic';
  * `/auth/register` stay reachable while private endpoints still get
  * JWT verification.
  */
-export const Public = (): MethodDecorator & ClassDecorator =>
-  SetMetadata(IS_PUBLIC_KEY, true);
+export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);

@@ -6,6 +6,7 @@ import { APP_GUARD } from '@nestjs/core';
 import * as Joi from 'joi';
 import { AuthModule } from './auth/auth.module';
 import { HealthModule } from './health/health.module';
+import { KycModule } from './kyc/kyc.module';
 
 @Module({
   imports: [
@@ -64,6 +65,8 @@ import { HealthModule } from './health/health.module';
     ]),
 
     HealthModule,
+
+    KycModule,
   ],
   providers: [
     {

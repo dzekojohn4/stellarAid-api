@@ -1,11 +1,21 @@
-import { Injectable, ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import {
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Reflector } from '@nestjs/core';
-import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { IS_PUBLIC_KEY } from './decorators/public.decorator';
 
+/**
+ * Single, project-wide JWT authentication guard. Honours the `@Public()`
+ * metadata shortcut from `decorators/public.decorator.ts` so endpoint
+ * authors can opt out of auth on a per-route basis without redeclaring
+ * guards.
+ */
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
-  constructor(private reflector: Reflector) {
+  constructor(private readonly reflector: Reflector) {
     super();
   }
 
@@ -22,15 +32,12 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     return super.canActivate(context);
   }
 
-  handleRequest(err: any, user: any, info: any) {
+  handleRequest(err: unknown, user: unknown, info: unknown) {
     if (err || !user) {
-      throw err || new UnauthorizedException('Invalid or expired token');
+      throw (
+        (err as Error) ?? new UnauthorizedException('Invalid or expired token')
+      );
     }
     return user;
   }
 }
-import { Injectable } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
-
-@Injectable()
-export class JwtAuthGuard extends AuthGuard('jwt') {}

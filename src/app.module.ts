@@ -5,6 +5,8 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import * as Joi from 'joi';
 import { AuthModule } from './auth/auth.module';
+import { JwtAuthModule } from './auth/jwt-auth.module';
+import { AdminModule } from './admin/admin.module';
 import { HealthModule } from './health/health.module';
 
 @Module({
@@ -54,6 +56,8 @@ import { HealthModule } from './health/health.module';
     }),
 
     AuthModule,
+    JwtAuthModule,
+    AdminModule,
 
     ThrottlerModule.forRoot([
       {

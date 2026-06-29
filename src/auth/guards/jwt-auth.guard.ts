@@ -5,7 +5,20 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Reflector } from '@nestjs/core';
-import { IS_PUBLIC_KEY } from './decorators/public.decorator';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { UserRole } from '../../users/schemas/user.schema';
+
+/**
+ * Shape of the user object attached to the request by `JwtStrategy`.
+ * Endpoints that inject `@CurrentUser()` should rely on this type so
+ * consumers (controllers, guards) share a single contract regardless of
+ * which passport strategy populated `req.user`.
+ */
+export interface JwtPayload {
+  sub: string;
+  email: string;
+  role: UserRole;
+}
 
 /**
  * Single, project-wide JWT authentication guard. Honours the `@Public()`
